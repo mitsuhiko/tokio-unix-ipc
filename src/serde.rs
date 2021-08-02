@@ -78,7 +78,7 @@ impl Serialize for HandleRef {
     where
         S: ser::Serializer,
     {
-        if serde_in_ipc_mode() {
+        if is_ipc_mode() {
             let fd = self.0;
             let idx = register_fd(fd);
             idx.serialize(serializer)
@@ -102,7 +102,7 @@ impl<'de, F: FromRawFd + IntoRawFd> Deserialize<'de> for Handle<F> {
     where
         D: de::Deserializer<'de>,
     {
-        if serde_in_ipc_mode() {
+        if is_ipc_mode() {
             let idx = u32::deserialize(deserializer)?;
             let fd = lookup_fd(idx).ok_or_else(|| de::Error::custom("fd not found in mapping"))?;
             unsafe { Ok(Handle(Mutex::new(Some(FromRawFd::from_raw_fd(fd))))) }
@@ -147,7 +147,7 @@ fn lookup_fd(idx: u32) -> Option<RawFd> {
 ///
 /// This can be used to customize the behavior of serialization/deserialization
 /// implementations for the use with unix-ipc.
-pub fn serde_in_ipc_mode() -> bool {
+pub fn is_ipc_mode() -> bool {
     IPC_FDS.with(|x| !x.borrow().is_empty())
 }
 
@@ -301,4 +301,33 @@ fn test_basic() {
     let mut out = Vec::new();
     f2.into_inner().read_to_end(&mut out).unwrap();
     assert!(out.len() > 100);
+}
+
+#[test]
+#[cfg(feature = "serde-structural")]
+fn test_structural() {
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[serde(crate = "serde_")]
+    struct InnerStruct {
+        value: u64,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[serde(crate = "serde_")]
+    struct BadStruct {
+        #[serde(flatten)]
+        inner: InnerStruct,
+    }
+
+    let (bytes, fds) = serialize(Structural(BadStruct {
+        inner: InnerStruct { value: 42 },
+    }))
+    .unwrap();
+    let value: Structural<BadStruct> = deserialize(&bytes, &fds).unwrap();
+    assert_eq!(
+        value.0,
+        BadStruct {
+            inner: InnerStruct { value: 42 },
+        }
+    );
 }

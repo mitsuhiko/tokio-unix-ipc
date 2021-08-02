@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io::Read;
 
-use tokio_unix_ipc::{channel, Handle, Receiver, Sender};
+use tokio_unix_ipc::serde::Handle;
+use tokio_unix_ipc::{channel, Receiver, Sender};
 
 #[tokio::test]
 async fn test_basic() {

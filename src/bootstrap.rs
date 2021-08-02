@@ -1,29 +1,32 @@
-use serde_::de::DeserializeOwned;
-use serde_::Serialize;
 use std::cell::RefCell;
 use std::fs;
 use std::io;
+use std::os::unix::prelude::RawFd;
 use std::path::{Path, PathBuf};
 
 use tokio::net::UnixListener;
 
-use crate::typed_channel::Sender;
+use crate::raw_channel::RawSender;
 
 /// A bootstrap helper.
 ///
 /// This creates a unix socket that is linked to the file system so
 /// that a [`Receiver`](struct.Receiver.html) can connect to it.  It
 /// lets you send one or more messages to the connected receiver.
+///
+/// The bootstrapper lets you send both to raw and typed receivers
+/// on the other side. To send to a raw one use the
+/// [`send_raw`](Self::send_raw) method.
 #[derive(Debug)]
-pub struct Bootstrapper<T> {
+pub struct Bootstrapper {
     listener: UnixListener,
-    sender: RefCell<Option<Sender<T>>>,
+    sender: RefCell<Option<RawSender>>,
     path: PathBuf,
 }
 
-impl<T: Serialize + DeserializeOwned> Bootstrapper<T> {
+impl Bootstrapper {
     /// Creates a bootstrapper at a random socket in `/tmp`.
-    pub fn new() -> io::Result<Bootstrapper<T>> {
+    pub fn new() -> io::Result<Bootstrapper> {
         use rand::{thread_rng, RngCore};
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -39,7 +42,7 @@ impl<T: Serialize + DeserializeOwned> Bootstrapper<T> {
     }
 
     /// Creates a bootstrapper at a specific socket path.
-    pub fn bind<P: AsRef<Path>>(p: P) -> io::Result<Bootstrapper<T>> {
+    pub fn bind<P: AsRef<Path>>(p: P) -> io::Result<Bootstrapper> {
         fs::remove_file(&p).ok();
         let listener = UnixListener::bind(&p)?;
         Ok(Bootstrapper {
@@ -54,21 +57,40 @@ impl<T: Serialize + DeserializeOwned> Bootstrapper<T> {
         &self.path
     }
 
-    /// Consumes the boostrapper and sends a single value in.
+    /// Sends a raw value into the boostrapper.
     ///
     /// This can be called multiple times to send more than one value
-    /// into the inner socket.
-    pub async fn send(&self, val: T) -> io::Result<()> {
+    /// into the inner socket. On the other side a
+    /// [`RawReceiver`](crate::RawReceiver) must be used.
+    pub async fn send_raw(&self, data: &[u8], fds: &[RawFd]) -> io::Result<usize> {
         if self.sender.borrow().is_none() {
             let (sock, _) = self.listener.accept().await?;
-            let sender = Sender::from_std(sock.into_std()?)?;
+            let sender = RawSender::from_std(sock.into_std()?)?;
             *self.sender.borrow_mut() = Some(sender);
         }
-        self.sender.borrow().as_ref().unwrap().send(val).await
+        self.sender.borrow().as_ref().unwrap().send(data, fds).await
+    }
+
+    /// Sends a value into the boostrapper.
+    ///
+    /// This can be called multiple times to send more than one value
+    /// into the inner socket.  On the other side a correctly typed
+    /// [`Receiver`](crate::Receiver) must be used.
+    ///
+    /// This requires the `serde` feature.
+    #[cfg(feature = "serde")]
+    pub async fn send<T: serde_::Serialize + serde_::de::DeserializeOwned>(
+        &self,
+        data: T,
+    ) -> io::Result<()> {
+        // replicate the logic from the typed sender with the dummy
+        // bool here.
+        let (bytes, fds) = crate::serde::serialize((data, true))?;
+        self.send_raw(&bytes, &fds).await.map(|_| ())
     }
 }
 
-impl<T> Drop for Bootstrapper<T> {
+impl Drop for Bootstrapper {
     fn drop(&mut self) {
         fs::remove_file(&self.path).ok();
     }
