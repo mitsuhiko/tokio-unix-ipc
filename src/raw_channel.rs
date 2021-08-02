@@ -6,6 +6,7 @@ use std::path::Path;
 use std::slice;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use nix::errno::Errno;
 use nix::sys::socket::{
     c_uint, recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags, CMSG_SPACE,
 };
@@ -97,6 +98,17 @@ macro_rules! fd_impl {
 fd_impl!(RawReceiver);
 fd_impl!(RawSender);
 
+macro_rules! nix_eintr {
+    ($expr:expr) => {
+        loop {
+            match $expr {
+                Err(Errno::EINTR) => continue,
+                other => break other,
+            }
+        }
+    };
+}
+
 fn recv_impl(
     fd: RawFd,
     buf: &mut [u8],
@@ -108,7 +120,7 @@ fn recv_impl(
     let msgspace_size = unsafe { CMSG_SPACE(mem::size_of::<RawFd>() as c_uint) * fd_count as u32 };
     let mut cmsgspace = vec![0u8; msgspace_size as usize];
 
-    let msg = recvmsg(fd, &iov, Some(&mut cmsgspace), MSG_FLAGS)?;
+    let msg = nix_eintr!(recvmsg(fd, &iov, Some(&mut cmsgspace), MSG_FLAGS))?;
 
     for cmsg in msg.cmsgs() {
         if let ControlMessageOwned::ScmRights(fds) = cmsg {
@@ -116,6 +128,8 @@ fn recv_impl(
                 #[cfg(target_os = "macos")]
                 unsafe {
                     for &fd in &fds {
+                        // as per documentation this does not ever fail
+                        // with EINTR
                         libc::ioctl(fd, libc::FIOCLEX);
                     }
                 }
@@ -146,15 +160,15 @@ fn recv_impl(
 fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd]) -> io::Result<usize> {
     let iov = [IoVec::from_slice(&data)];
     let sent = if !fds.is_empty() {
-        sendmsg(
+        nix_eintr!(sendmsg(
             fd,
             &iov,
             &[ControlMessage::ScmRights(fds)],
             MsgFlags::empty(),
             None,
-        )?
+        ))?
     } else {
-        sendmsg(fd, &iov, &[], MsgFlags::empty(), None)?
+        nix_eintr!(sendmsg(fd, &iov, &[], MsgFlags::empty(), None))?
     };
     if sent == 0 {
         return Err(io::Error::new(io::ErrorKind::WriteZero, "could not send"));
