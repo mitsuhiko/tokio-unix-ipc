@@ -15,10 +15,11 @@ autotests = true
 all-features = true
 
 [features]
-default = ["serde", "bootstrap"]
+default = ["serde", "bootstrap", "process"]
 serde = ["serde_", "bincode"]
 serde-structural = ["serde", "rmp-serde"]
 bootstrap = ["serde", "rand"]
+process = ["tokio/process"]
 
 [dependencies]
 libc = "0.2.67"

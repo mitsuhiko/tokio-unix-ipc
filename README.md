@@ -8,8 +8,8 @@ rust objects between processes. This is a replacement for my earlier
 ## How it works
 
 This uses [serde](https://serde.rs/) to serialize data over unix sockets
-via [bincode](https://github.com/servo/bincode). Thanks to the
-[`Handle`](https://docs.rs/unix-ipc/latest/unix-ipc/struct.Handle.html) abstraction you can also send any object
+via [bincode](https://github.com/bincode-org/bincode). Thanks to the
+`Handle` abstraction you can also send any object
 across that is convertable into a unix file handle.
 
 The way this works under the hood is that during serialization and
