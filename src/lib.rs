@@ -8,7 +8,7 @@
 //! ## How it works
 //!
 //! This uses [serde](https://serde.rs/) to serialize data over unix sockets
-//! via [bincode](https://github.com/servo/bincode). Thanks to the
+//! via [bincode](https://github.com/bincode-org/bincode). Thanks to the
 //! [`Handle`](https://docs.rs/unix-ipc/latest/unix-ipc/struct.Handle.html) abstraction you can also send any object
 //! across that is convertable into a unix file handle.
 //!
@@ -22,18 +22,21 @@
 mod raw_channel;
 
 #[cfg(feature = "serde")]
-mod serde;
+pub mod serde;
 
 #[cfg(feature = "serde")]
 mod typed_channel;
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "bootstrap")]
 mod bootstrap;
 
 pub use self::raw_channel::*;
 
 #[cfg(feature = "serde")]
-pub use self::{bootstrap::*, serde::*, typed_channel::*};
+pub use self::typed_channel::*;
+
+#[cfg(feature = "bootstrap")]
+pub use self::bootstrap::*;
 
 #[doc(hidden)]
 #[cfg(feature = "serde")]

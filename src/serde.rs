@@ -1,3 +1,19 @@
+//! This module provides extensions to serde for IPC.
+//!
+//! This crate uses serde for serialization of data across the process
+//! boundary.  Internally this uses [bincode](https://github.com/bincode-org/bincode)
+//! as transfer format.  File handles can also be serialized by using
+//! [`Handle`] and [`HandleRef`].
+//!
+#![cfg_attr(
+    feature = "serde-structural",
+    doc = r"
+Because bincode has various limitations in the structures that can
+be serialized, the [`Structural`] wrapper is available which forces
+structural serialization (currently uses msgpack).  This requires the
+`serde-structural` feature.
+"
+)]
 use std::cell::RefCell;
 use std::io;
 use std::mem;
@@ -175,7 +191,7 @@ macro_rules! implement_handle_serialization {
                 S: $crate::_serde_ref::ser::Serializer,
             {
                 $crate::_serde_ref::Serialize::serialize(
-                    &$crate::HandleRef(self.extract_raw_fd()),
+                    &$crate::serde::HandleRef(self.extract_raw_fd()),
                     serializer,
                 )
             }
@@ -185,7 +201,7 @@ macro_rules! implement_handle_serialization {
             where
                 D: $crate::_serde_ref::de::Deserializer<'de>,
             {
-                let handle: $crate::Handle<$ty> =
+                let handle: $crate::serde::Handle<$ty> =
                     $crate::_serde_ref::Deserialize::deserialize(deserializer)?;
                 Ok(handle.into_inner())
             }
@@ -204,7 +220,7 @@ macro_rules! implement_typed_handle_serialization {
                 S: $crate::_serde_ref::ser::Serializer,
             {
                 $crate::_serde_ref::Serialize::serialize(
-                    &$crate::HandleRef(self.extract_raw_fd()),
+                    &$crate::serde::HandleRef(self.extract_raw_fd()),
                     serializer,
                 )
             }
@@ -214,7 +230,7 @@ macro_rules! implement_typed_handle_serialization {
             where
                 D: $crate::_serde_ref::de::Deserializer<'de>,
             {
-                let handle: $crate::Handle<$ty> =
+                let handle: $crate::serde::Handle<$ty> =
                     $crate::_serde_ref::Deserialize::deserialize(deserializer)?;
                 Ok(handle.into_inner())
             }
@@ -224,6 +240,56 @@ macro_rules! implement_typed_handle_serialization {
 
 implement_typed_handle_serialization!(crate::Sender<T>);
 implement_typed_handle_serialization!(crate::Receiver<T>);
+
+#[cfg(feature = "serde-structural")]
+mod structural {
+    use super::*;
+
+    /// Utility wrapper to force values through structural serialization.
+    ///
+    /// By default `tokio-unix-ipc` will use
+    /// [`bincode`](https://github.com/servo/bincode) to serialize data across
+    /// process boundaries. This has some limitations which can cause
+    /// serialization or deserialization to fail for some types.
+    ///
+    /// Since the serde ecosystem has some types which require structural
+    /// serialization (eg: msgpack, JSON etc.) this type can be used to
+    /// work around some known bugs:
+    ///
+    /// * serde flatten not being supported: [bincode#245](https://github.com/servo/bincode/issues/245)
+    /// * vectors with unknown length not supported: [bincode#167](https://github.com/servo/bincode/issues/167)
+    ///
+    /// This requires the `serde-structural` feature.
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct Structural<T>(pub T);
+
+    impl<T: Serialize> Serialize for Structural<T> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: ser::Serializer,
+        {
+            let msgpack =
+                rmp_serde::to_vec(&self.0).map_err(|e| ser::Error::custom(e.to_string()))?;
+            serializer.serialize_bytes(&msgpack)
+        }
+    }
+
+    impl<'de, T: DeserializeOwned> Deserialize<'de> for Structural<T> {
+        fn deserialize<D>(deserializer: D) -> Result<Structural<T>, D::Error>
+        where
+            D: de::Deserializer<'de>,
+        {
+            let msgpack = Vec::<u8>::deserialize(deserializer)
+                .map_err(|e| de::Error::custom(e.to_string()))?;
+            Ok(Structural(
+                rmp_serde::from_read_ref(&msgpack).map_err(|e| de::Error::custom(e.to_string()))?,
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "serde-structural")]
+pub use self::structural::*;
 
 #[test]
 fn test_basic() {
