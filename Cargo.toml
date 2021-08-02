@@ -9,6 +9,7 @@ repository = "https://github.com/mitsuhiko/tokio-unix-ipc"
 keywords = ["ipc", "unix-socket", "subprocess"]
 readme = "README.md"
 autoexamples = true
+autotests = true
 
 [package.metadata.docs.rs]
 all-features = true
@@ -34,3 +35,11 @@ tokio = { version = "1.8.2", features = ["macros", "rt", "rt-multi-thread"] }
 [[example]]
 name = "hello"
 required-features = ["serde", "bootstrap"]
+
+[[test]]
+name = "test_bootstrap"
+required-features = ["bootstrap"]
+
+[[test]]
+name = "test_typed_channel"
+required-features = ["serde"]
