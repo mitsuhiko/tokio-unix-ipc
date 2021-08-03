@@ -27,6 +27,9 @@ pub mod serde;
 #[cfg(feature = "serde")]
 mod typed_channel;
 
+#[cfg(feature = "panic-support")]
+pub mod panic;
+
 #[cfg(feature = "bootstrap")]
 mod bootstrap;
 

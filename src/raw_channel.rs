@@ -234,6 +234,9 @@ impl RawReceiver {
     }
 }
 
+unsafe impl Send for RawReceiver {}
+unsafe impl Sync for RawReceiver {}
+
 /// An async raw sender.
 #[derive(Debug)]
 pub struct RawSender {
@@ -268,3 +271,6 @@ impl RawSender {
         }
     }
 }
+
+unsafe impl Send for RawSender {}
+unsafe impl Sync for RawSender {}

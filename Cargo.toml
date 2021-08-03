@@ -15,11 +15,12 @@ autotests = true
 all-features = true
 
 [features]
-default = ["serde", "bootstrap", "process"]
+default = ["serde", "bootstrap", "process", "panic-support"]
 serde = ["serde_", "bincode"]
 serde-structural = ["serde", "rmp-serde"]
 bootstrap = ["serde", "rand"]
 process = ["tokio/process"]
+panic-support = ["serde"]
 
 [dependencies]
 libc = "0.2.67"
@@ -29,6 +30,7 @@ serde_ = { package = "serde", version = "1.0.104", features = ["derive"], option
 bincode = { version = "1.2.1", optional = true }
 rand = { version = "0.8.0", optional = true }
 rmp-serde = { version = "0.15.5", optional = true }
+backtrace = { version = "0.3.43", optional = true, features = ["serde"] }
 
 [dev-dependencies]
 tokio = { version = "1.8.2", features = ["macros", "rt", "rt-multi-thread"] }

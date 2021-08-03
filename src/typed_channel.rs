@@ -120,6 +120,9 @@ impl<T: Serialize + DeserializeOwned> Receiver<T> {
     }
 }
 
+unsafe impl<T> Send for Receiver<T> {}
+unsafe impl<T> Sync for Receiver<T> {}
+
 impl<T: Serialize + DeserializeOwned> Sender<T> {
     /// Converts the typed sender into a raw one.
     pub fn into_raw_sender(self) -> RawSender {
@@ -135,3 +138,6 @@ impl<T: Serialize + DeserializeOwned> Sender<T> {
         Ok(())
     }
 }
+
+unsafe impl<T> Send for Sender<T> {}
+unsafe impl<T> Sync for Sender<T> {}
