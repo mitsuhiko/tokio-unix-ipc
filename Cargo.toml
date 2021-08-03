@@ -15,11 +15,10 @@ autotests = true
 all-features = true
 
 [features]
-default = ["serde", "bootstrap", "process", "panic-support"]
+default = ["serde", "bootstrap", "panic-support"]
 serde = ["serde_", "bincode"]
 serde-structural = ["serde", "rmp-serde"]
 bootstrap = ["serde", "rand"]
-process = ["tokio/process"]
 panic-support = ["serde"]
 
 [dependencies]
@@ -33,7 +32,7 @@ rmp-serde = { version = "0.15.5", optional = true }
 backtrace = { version = "0.3.43", optional = true, features = ["serde"] }
 
 [dev-dependencies]
-tokio = { version = "1.8.2", features = ["macros", "rt", "rt-multi-thread"] }
+tokio = { version = "1.8.2", features = ["macros", "rt", "rt-multi-thread", "process"] }
 
 [[example]]
 name = "hello"

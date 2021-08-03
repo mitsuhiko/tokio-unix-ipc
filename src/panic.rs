@@ -7,6 +7,8 @@
 //! To capture panics instead of crashing the panic hook needs to
 //! be installed ([`init_panic_hook`]) and afterwards the panicking
 //! function needs to be invoked via [`catch_panic`].
+//!
+//! This requires the `panic-support` feature.
 use std::any::Any;
 use std::cell::RefCell;
 use std::fmt;

@@ -19,6 +19,14 @@
 //!
 //! If you only want the unix socket abstraction you can disable all default
 //! features and use the raw channels.
+//!
+//! ## Features
+//!
+//! * `serde`: enables support for the non raw types
+//! * `serde-structural`: enables support for structural data passing
+//! * `bootstrap`: adds support for boostrapping
+//! * `panic-support`: adds support for IPC panic catching
+//! * `backtrace`: adds support for backtraces to panics
 mod raw_channel;
 
 #[cfg(feature = "serde")]
