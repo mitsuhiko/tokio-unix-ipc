@@ -16,6 +16,26 @@ async fn test_basic() {
 }
 
 #[tokio::test]
+async fn test_creds() {
+    let (tx, rx) = raw_channel().unwrap();
+
+    let myuid = nix::unistd::getuid().as_raw() as libc::uid_t;
+    let mypid = nix::unistd::getpid().as_raw() as libc::pid_t;
+
+    tokio::spawn(async move {
+        tx.send_with_credentials(b"Hello World!", &[][..])
+            .await
+            .unwrap();
+    });
+
+    let (bytes, fds, creds) = rx.recv_with_credentials().await.unwrap();
+    assert_eq!(bytes, b"Hello World!");
+    assert_eq!(fds, None);
+    assert_eq!(creds.uid(), myuid);
+    assert_eq!(creds.pid(), mypid);
+}
+
+#[tokio::test]
 async fn test_large_buffer() {
     let mut buf = String::new();
     for x in 0..100000 {
