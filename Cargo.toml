@@ -2,7 +2,7 @@
 name = "tokio-unix-ipc"
 version = "0.2.0"
 edition = "2018"
-license = "MIT/Apache-2.0"
+license = "Apache-2.0"
 description = "A minimal abstraction for IPC via unix sockets."
 homepage = "https://github.com/mitsuhiko/tokio-unix-ipc"
 repository = "https://github.com/mitsuhiko/tokio-unix-ipc"

@@ -1,5 +1,11 @@
 # tokio-unix-ipc
 
+[![Build Status](https://github.com/mitsuhiko/tokio-unix-ipc/workflows/Tests/badge.svg?branch=main)](https://github.com/mitsuhiko/tokio-unix-ipc/actions?query=workflow%3ATests)
+[![Crates.io](https://img.shields.io/crates/d/tokio-unix-ipc.svg)](https://crates.io/crates/tokio-unix-ipc)
+[![License](https://img.shields.io/github/license/mitsuhiko/tokio-unix-ipc)](https://github.com/mitsuhiko/tokio-unix-ipc/blob/main/LICENSE)
+[![rustc 1.41.0](https://img.shields.io/badge/rust-1.41%2B-orange.svg)](https://img.shields.io/badge/rust-1.41%2B-orange.svg)
+[![Documentation](https://docs.rs/tokio-unix-ipc/badge.svg)](https://docs.rs/tokio-unix-ipc)
+
 This crate implements a minimal abstraction over UNIX domain sockets for
 the purpose of IPC on top of tokio. It lets you send both file handles and
 rust objects between processes. This is a replacement for my earlier
@@ -29,4 +35,9 @@ the raw types are available.
 - `serde`: enables serialization and deserialization.
 - `bootstrap`: adds the `Bootstrapper` type.
 
-License: MIT/Apache-2.0
+## License and Links
+
+* [Documentation](https://docs.rs/tokio-unix-ipc/)
+* [Issue Tracker](https://github.com/mitsuhiko/tokio-unix-ipc/issues)
+* [Examples](https://github.com/mitsuhiko/tokio-unix-ipc/tree/main/examples)
+* License: [Apache-2.0](https://github.com/mitsuhiko/tokio-unix-ipc/blob/main/LICENSE)
