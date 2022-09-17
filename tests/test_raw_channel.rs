@@ -16,6 +16,7 @@ async fn test_basic() {
 }
 
 #[tokio::test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 async fn test_creds() {
     let (tx, rx) = raw_channel().unwrap();
 

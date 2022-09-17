@@ -67,6 +67,7 @@ impl Credentials {
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 impl From<nix::sys::socket::UnixCredentials> for Credentials {
     fn from(c: nix::sys::socket::UnixCredentials) -> Self {
         Self {
@@ -149,42 +150,56 @@ fn recv_impl(
     buf: &mut [u8],
     fds: Option<Vec<i32>>,
     fd_count: usize,
-    want_creds: bool,
+    _want_creds: bool,
 ) -> io::Result<(usize, Option<Vec<RawFd>>, Option<Credentials>)> {
     let iov = [IoVec::from_mut_slice(buf)];
     let mut new_fds = None;
+
+    #[allow(unused_mut)]
     let mut creds = None;
 
     // Compute the size of ancillary data, combining expected number of file descriptors
     // with any space needed for credentials.
     let msgspace_size = {
         let fd_size = unsafe { CMSG_SPACE(mem::size_of::<RawFd>() as c_uint) * fd_count as u32 };
-        let cred_size: u32 = want_creds
-            .then(|| unsafe {
-                CMSG_SPACE(mem::size_of::<nix::sys::socket::UnixCredentials>() as c_uint)
-            })
-            .unwrap_or_default();
-        fd_size + cred_size
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        {
+            let cred_size: u32 = _want_creds
+                .then(|| unsafe {
+                    CMSG_SPACE(mem::size_of::<nix::sys::socket::UnixCredentials>() as c_uint)
+                })
+                .unwrap_or_default();
+            fd_size + cred_size
+        }
+        #[cfg(not(any(target_os = "android", target_os = "linux")))]
+        {
+            fd_size
+        }
     };
     let mut cmsgspace = vec![0u8; msgspace_size as usize];
 
     let msg = nix_eintr!(recvmsg(fd, &iov, Some(&mut cmsgspace), MSG_FLAGS))?;
 
     for cmsg in msg.cmsgs() {
-        if let ControlMessageOwned::ScmRights(fds) = cmsg {
-            if !fds.is_empty() {
-                #[cfg(target_os = "macos")]
-                unsafe {
-                    for &fd in &fds {
-                        // as per documentation this does not ever fail
-                        // with EINTR
-                        libc::ioctl(fd, libc::FIOCLEX);
+        match cmsg {
+            ControlMessageOwned::ScmRights(fds) => {
+                if !fds.is_empty() {
+                    #[cfg(target_os = "macos")]
+                    unsafe {
+                        for &fd in &fds {
+                            // as per documentation this does not ever fail
+                            // with EINTR
+                            libc::ioctl(fd, libc::FIOCLEX);
+                        }
                     }
+                    new_fds = Some(fds);
                 }
-                new_fds = Some(fds);
             }
-        } else if let ControlMessageOwned::ScmCredentials(c) = cmsg {
-            creds = Some(c.into());
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            ControlMessageOwned::ScmCredentials(c) => {
+                creds = Some(c.into());
+            }
+            _ => {}
         }
     }
 
@@ -207,6 +222,7 @@ fn recv_impl(
     Ok((msg.bytes, fds, creds))
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<usize> {
     let iov = [IoVec::from_slice(&data)];
     let creds = creds.then(|| nix::sys::socket::UnixCredentials::new());
@@ -230,6 +246,26 @@ fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<u
             let cmsgs = &[ControlMessage::ScmRights(fds)];
             nix_eintr!(sendmsg(fd, &iov, cmsgs, MsgFlags::empty(), None,))?
         }
+    };
+    if sent == 0 {
+        return Err(io::Error::new(io::ErrorKind::WriteZero, "could not send"));
+    }
+    Ok(sent)
+}
+
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
+fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], _creds: bool) -> io::Result<usize> {
+    let iov = [IoVec::from_slice(&data)];
+    let sent = if !fds.is_empty() {
+        nix_eintr!(sendmsg(
+            fd,
+            &iov,
+            &[ControlMessage::ScmRights(fds)],
+            MsgFlags::empty(),
+            None,
+        ))?
+    } else {
+        nix_eintr!(sendmsg(fd, &iov, &[], MsgFlags::empty(), None))?
     };
     if sent == 0 {
         return Err(io::Error::new(io::ErrorKind::WriteZero, "could not send"));
@@ -271,8 +307,8 @@ impl RawReceiver {
         Ok((buf, fds))
     }
 
-    /// Receives raw bytes and credentials from the socket.  The sender must have used
-    ///
+    /// Receives raw bytes and credentials from the socket.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub async fn recv_with_credentials(
         &self,
     ) -> io::Result<(Vec<u8>, Option<Vec<RawFd>>, Credentials)> {
@@ -352,6 +388,7 @@ impl RawSender {
     }
 
     /// Sends raw bytes and fds along with current process credentials.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub async fn send_with_credentials(&self, data: &[u8], fds: &[RawFd]) -> io::Result<usize> {
         let header = MsgHeader {
             payload_len: data.len() as u32,
