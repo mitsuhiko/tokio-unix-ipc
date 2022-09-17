@@ -42,6 +42,41 @@ impl MsgHeader {
     }
 }
 
+/// Data received via `SCM_CREDENTIALS` from a remote process.
+#[derive(Debug, Clone)]
+pub struct Credentials {
+    pid: libc::pid_t,
+    uid: libc::uid_t,
+    gid: libc::gid_t,
+}
+
+impl Credentials {
+    /// The remote process identifier.
+    pub fn pid(&self) -> libc::pid_t {
+        self.pid
+    }
+
+    /// The remote process user ID.
+    pub fn uid(&self) -> libc::uid_t {
+        self.uid
+    }
+
+    /// The remote process group ID.
+    pub fn gid(&self) -> libc::gid_t {
+        self.gid
+    }
+}
+
+impl From<nix::sys::socket::UnixCredentials> for Credentials {
+    fn from(c: nix::sys::socket::UnixCredentials) -> Self {
+        Self {
+            pid: c.pid(),
+            uid: c.uid(),
+            gid: c.gid(),
+        }
+    }
+}
+
 macro_rules! fd_impl {
     ($ty:ty) => {
         #[allow(dead_code)]
@@ -114,10 +149,23 @@ fn recv_impl(
     buf: &mut [u8],
     fds: Option<Vec<i32>>,
     fd_count: usize,
-) -> io::Result<(usize, Option<Vec<RawFd>>)> {
+    want_creds: bool,
+) -> io::Result<(usize, Option<Vec<RawFd>>, Option<Credentials>)> {
     let iov = [IoVec::from_mut_slice(buf)];
     let mut new_fds = None;
-    let msgspace_size = unsafe { CMSG_SPACE(mem::size_of::<RawFd>() as c_uint) * fd_count as u32 };
+    let mut creds = None;
+
+    // Compute the size of ancillary data, combining expected number of file descriptors
+    // with any space needed for credentials.
+    let msgspace_size = {
+        let fd_size = unsafe { CMSG_SPACE(mem::size_of::<RawFd>() as c_uint) * fd_count as u32 };
+        let cred_size: u32 = want_creds
+            .then(|| unsafe {
+                CMSG_SPACE(mem::size_of::<nix::sys::socket::UnixCredentials>() as c_uint)
+            })
+            .unwrap_or_default();
+        fd_size + cred_size
+    };
     let mut cmsgspace = vec![0u8; msgspace_size as usize];
 
     let msg = nix_eintr!(recvmsg(fd, &iov, Some(&mut cmsgspace), MSG_FLAGS))?;
@@ -135,6 +183,8 @@ fn recv_impl(
                 }
                 new_fds = Some(fds);
             }
+        } else if let ControlMessageOwned::ScmCredentials(c) = cmsg {
+            creds = Some(c.into());
         }
     }
 
@@ -154,21 +204,32 @@ fn recv_impl(
         (old, None) => old,
     };
 
-    Ok((msg.bytes, fds))
+    Ok((msg.bytes, fds, creds))
 }
 
-fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd]) -> io::Result<usize> {
+fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<usize> {
     let iov = [IoVec::from_slice(&data)];
-    let sent = if !fds.is_empty() {
-        nix_eintr!(sendmsg(
+    let creds = creds.then(|| nix::sys::socket::UnixCredentials::new());
+    let sent = match (fds, creds.as_ref()) {
+        ([], None) => nix_eintr!(sendmsg(fd, &iov, &[], MsgFlags::empty(), None))?,
+        ([], Some(creds)) => nix_eintr!(sendmsg(
             fd,
             &iov,
-            &[ControlMessage::ScmRights(fds)],
+            &[ControlMessage::ScmCredentials(creds),],
             MsgFlags::empty(),
             None,
-        ))?
-    } else {
-        nix_eintr!(sendmsg(fd, &iov, &[], MsgFlags::empty(), None))?
+        ))?,
+        (fds, Some(creds)) => {
+            let cmsgs = &[
+                ControlMessage::ScmRights(fds),
+                ControlMessage::ScmCredentials(creds),
+            ];
+            nix_eintr!(sendmsg(fd, &iov, cmsgs, MsgFlags::empty(), None,))?
+        }
+        (fds, None) => {
+            let cmsgs = &[ControlMessage::ScmRights(fds)];
+            nix_eintr!(sendmsg(fd, &iov, cmsgs, MsgFlags::empty(), None,))?
+        }
     };
     if sent == 0 {
         return Err(io::Error::new(io::ErrorKind::WriteZero, "could not send"));
@@ -202,25 +263,59 @@ impl RawReceiver {
     /// Receives raw bytes from the socket.
     pub async fn recv(&self) -> io::Result<(Vec<u8>, Option<Vec<RawFd>>)> {
         let mut header = MsgHeader::default();
-        self.recv_impl(header.as_buf_mut(), 0).await?;
+        self.recv_impl(header.as_buf_mut(), 0, false).await?;
         let mut buf = header.make_buffer();
-        let (_, fds) = self.recv_impl(&mut buf, header.fd_count as usize).await?;
+        let (_, fds, _) = self
+            .recv_impl(&mut buf, header.fd_count as usize, false)
+            .await?;
         Ok((buf, fds))
+    }
+
+    /// Receives raw bytes and credentials from the socket.  The sender must have used
+    ///
+    pub async fn recv_with_credentials(
+        &self,
+    ) -> io::Result<(Vec<u8>, Option<Vec<RawFd>>, Credentials)> {
+        nix::sys::socket::setsockopt(
+            self.inner.as_raw_fd(),
+            nix::sys::socket::sockopt::PassCred,
+            &true,
+        )?;
+        let mut header = MsgHeader::default();
+        let (_, _, creds) = self.recv_impl(header.as_buf_mut(), 0, true).await?;
+        let creds = creds.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Remote did not provide credentials",
+            )
+        })?;
+        let mut buf = header.make_buffer();
+        let (_, fds, _) = self
+            .recv_impl(&mut buf, header.fd_count as usize, false)
+            .await?;
+        Ok((buf, fds, creds))
     }
 
     async fn recv_impl(
         &self,
         buf: &mut [u8],
         fd_count: usize,
-    ) -> io::Result<(usize, Option<Vec<RawFd>>)> {
+        want_creds: bool,
+    ) -> io::Result<(usize, Option<Vec<RawFd>>, Option<Credentials>)> {
         let mut pos = 0;
         let mut fds = None;
 
         loop {
             let mut guard = self.inner.readable().await?;
-            let (bytes, new_fds) = match guard
-                .try_io(|inner| recv_impl(inner.as_raw_fd(), &mut buf[pos..], fds.take(), fd_count))
-            {
+            let (bytes, new_fds, creds) = match guard.try_io(|inner| {
+                recv_impl(
+                    inner.as_raw_fd(),
+                    &mut buf[pos..],
+                    fds.take(),
+                    fd_count,
+                    want_creds,
+                )
+            }) {
                 Ok(result) => result,
                 Err(_would_block) => continue,
             }?;
@@ -228,7 +323,7 @@ impl RawReceiver {
             fds = new_fds;
             pos += bytes;
             if pos >= buf.len() {
-                return Ok((pos, fds));
+                return Ok((pos, fds, creds));
             }
         }
     }
@@ -241,6 +336,7 @@ unsafe impl Sync for RawReceiver {}
 #[derive(Debug)]
 pub struct RawSender {
     inner: AsyncFd<RawFd>,
+    #[allow(dead_code)]
     dead: AtomicBool,
 }
 
@@ -251,15 +347,27 @@ impl RawSender {
             payload_len: data.len() as u32,
             fd_count: fds.len() as u32,
         };
-        self.send_impl(header.as_buf(), &[][..]).await?;
-        self.send_impl(&data, fds).await
+        self.send_impl(header.as_buf(), &[][..], false).await?;
+        self.send_impl(&data, fds, false).await
     }
 
-    async fn send_impl(&self, data: &[u8], mut fds: &[RawFd]) -> io::Result<usize> {
+    /// Sends raw bytes and fds along with current process credentials.
+    pub async fn send_with_credentials(&self, data: &[u8], fds: &[RawFd]) -> io::Result<usize> {
+        let header = MsgHeader {
+            payload_len: data.len() as u32,
+            fd_count: fds.len() as u32,
+        };
+        self.send_impl(header.as_buf(), &[][..], true).await?;
+        self.send_impl(&data, fds, false).await
+    }
+
+    async fn send_impl(&self, data: &[u8], mut fds: &[RawFd], creds: bool) -> io::Result<usize> {
         let mut pos = 0;
         loop {
             let mut guard = self.inner.writable().await?;
-            let sent = match guard.try_io(|inner| send_impl(inner.as_raw_fd(), &data[pos..], fds)) {
+            let sent = match guard
+                .try_io(|inner| send_impl(inner.as_raw_fd(), &data[pos..], fds, creds))
+            {
                 Ok(result) => result,
                 Err(_would_block) => continue,
             }?;
