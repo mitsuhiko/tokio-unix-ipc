@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/mitsuhiko/tokio-unix-ipc/workflows/Tests/badge.svg?branch=main)](https://github.com/mitsuhiko/tokio-unix-ipc/actions?query=workflow%3ATests)
 [![Crates.io](https://img.shields.io/crates/d/tokio-unix-ipc.svg)](https://crates.io/crates/tokio-unix-ipc)
 [![License](https://img.shields.io/github/license/mitsuhiko/tokio-unix-ipc)](https://github.com/mitsuhiko/tokio-unix-ipc/blob/main/LICENSE)
-[![rustc 1.41.0](https://img.shields.io/badge/rust-1.41%2B-orange.svg)](https://img.shields.io/badge/rust-1.41%2B-orange.svg)
+[![rustc 1.53.0](https://img.shields.io/badge/rust-1.53%2B-orange.svg)](https://img.shields.io/badge/rust-1.53%2B-orange.svg)
 [![Documentation](https://docs.rs/tokio-unix-ipc/badge.svg)](https://docs.rs/tokio-unix-ipc)
 
 This crate implements a minimal abstraction over UNIX domain sockets for
