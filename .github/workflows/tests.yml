@@ -5,7 +5,11 @@ on: [push]
 jobs:
   build-latest:
     name: Test on Latest
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v1
