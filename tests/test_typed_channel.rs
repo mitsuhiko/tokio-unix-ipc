@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::io::Read;
+use std::os::unix::net::UnixStream;
 
 use tokio_unix_ipc::serde::Handle;
-use tokio_unix_ipc::{channel, Receiver, Sender};
+use tokio_unix_ipc::{channel, channel_from_std, Receiver, Sender};
 
 #[tokio::test]
 async fn test_basic() {
@@ -89,4 +90,60 @@ async fn test_zero_sized_type() {
     });
 
     rx.recv().await.unwrap();
+}
+
+const HELO: &str = "HELO from server";
+const SUP: &str = "SUP from client";
+const MORE: &str = "ANOTHER msg from client";
+const BYE: &str = "BYE msg from server";
+
+async fn run_client(sock: UnixStream) {
+    let (send, recv) = channel_from_std(sock).unwrap();
+    send.send(SUP.to_string()).await.unwrap();
+    let msg: String = recv.recv().await.unwrap();
+    assert_eq!(msg.as_str(), HELO);
+    for _ in 0..3 {
+        send.send(MORE.to_string()).await.unwrap();
+    }
+    let msg = recv.recv().await.unwrap();
+    assert_eq!(msg.as_str(), BYE);
+    // Drop send+recv, closing the connection
+}
+
+async fn run_server(sock: UnixStream) {
+    let (send, recv) = channel_from_std(sock).unwrap();
+    let msg: String = recv.recv().await.unwrap();
+    assert_eq!(msg.as_str(), SUP);
+    send.send(HELO.to_string()).await.unwrap();
+    for _ in 0..3 {
+        let msg: String = recv.recv().await.unwrap();
+        assert_eq!(msg.as_str(), MORE);
+    }
+    send.send(BYE.to_string()).await.unwrap();
+    match recv.recv().await {
+        Ok(msg) => panic!("Unexpected message {}", msg),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {}
+        Err(e) => {
+            panic!("Unexpected error {:?}", e)
+        }
+    }
+}
+
+/// This test simulates a multi-process client server where we've allocated
+/// a socket pair externally (e.g. systemd socket activation).
+#[test]
+fn test_pair_from_std() {
+    let mkrt = || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    };
+    let (client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+    let client_thread =
+        std::thread::spawn(move || mkrt().block_on(async move { run_client(client).await }));
+
+    mkrt().block_on(async move { run_server(server).await });
+
+    client_thread.join().unwrap();
 }

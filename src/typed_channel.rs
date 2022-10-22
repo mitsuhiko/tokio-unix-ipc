@@ -102,6 +102,16 @@ pub fn channel<T: Serialize + DeserializeOwned>() -> io::Result<(Sender<T>, Rece
     Ok((sender.into(), receiver.into()))
 }
 
+/// Creates a typed connected channel from an already extant socket.
+pub fn channel_from_std<S: Serialize + DeserializeOwned, R: Serialize + DeserializeOwned>(
+    sender: UnixStream,
+) -> io::Result<(Sender<S>, Receiver<R>)> {
+    let receiver = sender.try_clone()?;
+    let sender = RawSender::from_std(sender)?;
+    let receiver = RawReceiver::from_std(receiver)?;
+    Ok((sender.into(), receiver.into()))
+}
+
 impl<T: Serialize + DeserializeOwned> Receiver<T> {
     /// Connects a receiver to a named unix socket.
     pub async fn connect<P: AsRef<Path>>(p: P) -> io::Result<Receiver<T>> {
