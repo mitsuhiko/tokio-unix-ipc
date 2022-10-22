@@ -89,7 +89,15 @@ macro_rules! fd_impl {
                 })
             }
 
-            pub(crate) fn from_std(stream: UnixStream) -> io::Result<Self> {
+            /// Convert from a standard stream.  This is a fallible
+            /// operation because registering the file descriptor with
+            /// the async runtime may fail.
+            ///
+            /// # Panics
+            ///
+            /// This function panics if it is not called from within a runtime with
+            /// IO enabled.
+            pub fn from_std(stream: UnixStream) -> io::Result<Self> {
                 unsafe { Self::from_raw_fd(stream.into_raw_fd()) }
             }
 
