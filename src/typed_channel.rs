@@ -97,7 +97,16 @@ fd_impl!(raw_receiver, RawReceiver, Receiver<T>);
 fd_impl!(raw_sender, RawSender, Sender<T>);
 
 /// Creates a typed connected channel.
-pub fn channel<T: Serialize + DeserializeOwned>() -> io::Result<(Sender<T>, Receiver<T>)> {
+pub fn channel<S: Serialize + DeserializeOwned, R: Serialize + DeserializeOwned>(
+) -> io::Result<(Sender<S>, Receiver<R>)> {
+    let (sender, receiver) = raw_channel()?;
+    Ok((sender.into(), receiver.into()))
+}
+
+/// Creates a typed connected channel where the same type is
+/// both sent and received.
+pub fn symmetric_channel<T: Serialize + DeserializeOwned>() -> io::Result<(Sender<T>, Receiver<T>)>
+{
     let (sender, receiver) = raw_channel()?;
     Ok((sender.into(), receiver.into()))
 }

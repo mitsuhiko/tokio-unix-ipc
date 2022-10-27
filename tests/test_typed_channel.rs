@@ -3,13 +3,13 @@ use std::io::Read;
 use std::os::unix::net::UnixStream;
 
 use tokio_unix_ipc::serde::Handle;
-use tokio_unix_ipc::{channel, channel_from_std, Receiver, Sender};
+use tokio_unix_ipc::{channel, channel_from_std, symmetric_channel, Receiver, Sender};
 
 #[tokio::test]
 async fn test_basic() {
     let f = Handle::from(std::fs::File::open("src/serde.rs").unwrap());
 
-    let (tx, rx) = channel().unwrap();
+    let (tx, rx) = symmetric_channel().unwrap();
 
     tokio::spawn(async move {
         tx.send(f).await.unwrap();
@@ -23,9 +23,25 @@ async fn test_basic() {
 }
 
 #[tokio::test]
-async fn test_send_channel() {
+async fn test_basic_asymmetric() {
+    let f = Handle::from(std::fs::File::open("src/serde.rs").unwrap());
+
     let (tx, rx) = channel().unwrap();
-    let (sender, receiver) = channel::<Handle<File>>().unwrap();
+
+    tokio::task::spawn_blocking(|| {
+        let mut out = Vec::new();
+        f.into_inner().read_to_end(&mut out).unwrap();
+        tokio::runtime::Handle::current().block_on(async move { tx.send(out).await.unwrap() })
+    });
+
+    let out: Vec<u8> = rx.recv().await.unwrap();
+    assert!(out.len() > 100);
+}
+
+#[tokio::test]
+async fn test_send_channel() {
+    let (tx, rx) = symmetric_channel().unwrap();
+    let (sender, receiver) = symmetric_channel::<Handle<File>>().unwrap();
 
     tokio::spawn(async move {
         tx.send(sender).await.unwrap();
@@ -45,9 +61,9 @@ async fn test_send_channel() {
 
 #[tokio::test]
 async fn test_multiple_fds() {
-    let (tx1, rx1) = channel().unwrap();
-    let (tx2, rx2) = channel::<()>().unwrap();
-    let (tx3, rx3) = channel::<()>().unwrap();
+    let (tx1, rx1) = symmetric_channel().unwrap();
+    let (tx2, rx2) = symmetric_channel::<()>().unwrap();
+    let (tx3, rx3) = symmetric_channel::<()>().unwrap();
 
     let a = tokio::spawn(async move {
         tx1.send((tx2, rx2, tx3, rx3)).await.unwrap();
@@ -63,7 +79,7 @@ async fn test_multiple_fds() {
 
 #[tokio::test]
 async fn test_conversion() {
-    let (tx, rx) = channel::<i32>().unwrap();
+    let (tx, rx) = symmetric_channel::<i32>().unwrap();
     let raw_tx = tx.into_raw_sender();
     let raw_rx = rx.into_raw_receiver();
     let tx = Sender::<bool>::from(raw_tx);
@@ -83,7 +99,7 @@ async fn test_conversion() {
 
 #[tokio::test]
 async fn test_zero_sized_type() {
-    let (tx, rx) = channel::<()>().unwrap();
+    let (tx, rx) = symmetric_channel::<()>().unwrap();
 
     tokio::spawn(async move {
         tx.send(()).await.unwrap();
