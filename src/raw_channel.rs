@@ -1,4 +1,5 @@
 use std::io;
+use std::io::{IoSlice, IoSliceMut};
 use std::mem;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
@@ -10,7 +11,6 @@ use nix::errno::Errno;
 use nix::sys::socket::{
     c_uint, recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags, CMSG_SPACE,
 };
-use nix::sys::uio::IoVec;
 use nix::unistd;
 
 use tokio::io::unix::AsyncFd;
@@ -160,7 +160,7 @@ fn recv_impl(
     fd_count: usize,
     _want_creds: bool,
 ) -> io::Result<(usize, Option<Vec<RawFd>>, Option<Credentials>)> {
-    let iov = [IoVec::from_mut_slice(buf)];
+    let mut iov = [IoSliceMut::new(buf)];
     let mut new_fds = None;
 
     #[allow(unused_mut)]
@@ -186,7 +186,7 @@ fn recv_impl(
     };
     let mut cmsgspace = vec![0u8; msgspace_size as usize];
 
-    let msg = nix_eintr!(recvmsg(fd, &iov, Some(&mut cmsgspace), MSG_FLAGS))?;
+    let msg = nix_eintr!(recvmsg::<()>(fd, &mut iov, Some(&mut cmsgspace), MSG_FLAGS))?;
 
     for cmsg in msg.cmsgs() {
         match cmsg {
@@ -232,11 +232,11 @@ fn recv_impl(
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<usize> {
-    let iov = [IoVec::from_slice(&data)];
+    let iov = [IoSlice::new(&data)];
     let creds = creds.then(|| nix::sys::socket::UnixCredentials::new());
     let sent = match (fds, creds.as_ref()) {
-        ([], None) => nix_eintr!(sendmsg(fd, &iov, &[], MsgFlags::empty(), None))?,
-        ([], Some(creds)) => nix_eintr!(sendmsg(
+        ([], None) => nix_eintr!(sendmsg::<()>(fd, &iov, &[], MsgFlags::empty(), None))?,
+        ([], Some(creds)) => nix_eintr!(sendmsg::<()>(
             fd,
             &iov,
             &[ControlMessage::ScmCredentials(creds),],
@@ -248,11 +248,11 @@ fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<u
                 ControlMessage::ScmRights(fds),
                 ControlMessage::ScmCredentials(creds),
             ];
-            nix_eintr!(sendmsg(fd, &iov, cmsgs, MsgFlags::empty(), None,))?
+            nix_eintr!(sendmsg::<()>(fd, &iov, cmsgs, MsgFlags::empty(), None,))?
         }
         (fds, None) => {
             let cmsgs = &[ControlMessage::ScmRights(fds)];
-            nix_eintr!(sendmsg(fd, &iov, cmsgs, MsgFlags::empty(), None,))?
+            nix_eintr!(sendmsg::<()>(fd, &iov, cmsgs, MsgFlags::empty(), None,))?
         }
     };
     if sent == 0 {
@@ -263,9 +263,9 @@ fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<u
 
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], _creds: bool) -> io::Result<usize> {
-    let iov = [IoVec::from_slice(&data)];
+    let iov = [IoSlice::new(&data)];
     let sent = if !fds.is_empty() {
-        nix_eintr!(sendmsg(
+        nix_eintr!(sendmsg::<()>(
             fd,
             &iov,
             &[ControlMessage::ScmRights(fds)],
@@ -273,7 +273,7 @@ fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], _creds: bool) -> io::Result<
             None,
         ))?
     } else {
-        nix_eintr!(sendmsg(fd, &iov, &[], MsgFlags::empty(), None))?
+        nix_eintr!(sendmsg::<()>(fd, &iov, &[], MsgFlags::empty(), None))?
     };
     if sent == 0 {
         return Err(io::Error::new(io::ErrorKind::WriteZero, "could not send"));
