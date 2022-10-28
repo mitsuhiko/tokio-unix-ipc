@@ -1,7 +1,7 @@
 use serde_::{Deserialize, Serialize};
 use std::env;
 use std::process;
-use tokio_unix_ipc::{channel, Bootstrapper, Receiver, Sender};
+use tokio_unix_ipc::{symmetric_channel, Bootstrapper, Receiver, Sender};
 
 const ENV_VAR: &str = "PROC_CONNECT_TO";
 
@@ -32,14 +32,14 @@ async fn main() {
             .spawn()
             .unwrap();
 
-        let (tx, rx) = channel().unwrap();
+        let (tx, rx) = symmetric_channel().unwrap();
         bootstrapper
             .send(Task::Sum(vec![23, 42], tx))
             .await
             .unwrap();
         println!("result: {}", rx.recv().await.unwrap());
 
-        let (tx, rx) = channel().unwrap();
+        let (tx, rx) = symmetric_channel().unwrap();
         bootstrapper
             .send(Task::Sum((0..10).collect(), tx))
             .await

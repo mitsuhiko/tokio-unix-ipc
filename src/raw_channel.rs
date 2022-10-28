@@ -290,6 +290,15 @@ pub fn raw_channel() -> io::Result<(RawSender, RawReceiver)> {
     ))
 }
 
+/// Creates a raw connected channel from an already extant socket.
+pub fn raw_channel_from_std(sender: UnixStream) -> io::Result<(RawSender, RawReceiver)> {
+    let receiver = sender.try_clone()?;
+    Ok((
+        RawSender::from_std(sender)?,
+        RawReceiver::from_std(receiver)?,
+    ))
+}
+
 /// An async raw receiver.
 #[derive(Debug)]
 pub struct RawReceiver {
