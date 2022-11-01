@@ -1,8 +1,8 @@
-use std::cell::RefCell;
 use std::fs;
 use std::io;
 use std::os::unix::prelude::RawFd;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use tokio::net::UnixListener;
 
@@ -20,7 +20,7 @@ use crate::raw_channel::RawSender;
 #[derive(Debug)]
 pub struct Bootstrapper {
     listener: UnixListener,
-    sender: RefCell<Option<RawSender>>,
+    sender: Mutex<Option<RawSender>>,
     path: PathBuf,
 }
 
@@ -47,7 +47,7 @@ impl Bootstrapper {
         let listener = UnixListener::bind(&p)?;
         Ok(Bootstrapper {
             listener,
-            sender: RefCell::new(None),
+            sender: Mutex::new(None),
             path: p.as_ref().to_path_buf(),
         })
     }
@@ -63,12 +63,18 @@ impl Bootstrapper {
     /// into the inner socket. On the other side a
     /// [`RawReceiver`](crate::RawReceiver) must be used.
     pub async fn send_raw(&self, data: &[u8], fds: &[RawFd]) -> io::Result<usize> {
-        if self.sender.borrow().is_none() {
+        if self.sender.lock().unwrap().is_none() {
             let (sock, _) = self.listener.accept().await?;
             let sender = RawSender::from_std(sock.into_std()?)?;
-            *self.sender.borrow_mut() = Some(sender);
+            *self.sender.lock().unwrap() = Some(sender);
         }
-        self.sender.borrow().as_ref().unwrap().send(data, fds).await
+        self.sender
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .send(data, fds)
+            .await
     }
 
     /// Sends a value into the boostrapper.
