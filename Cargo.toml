@@ -24,7 +24,7 @@ panic-support = ["serde"]
 [dependencies]
 libc = "0.2.67"
 nix = "0.24.0"
-tokio = { version = "1.8.2", features = ["net"] }
+tokio = { version = "1.8.2", features = ["net", "sync"] }
 serde_ = { package = "serde", version = "1.0.104", features = ["derive"], optional = true }
 bincode = { version = "1.2.1", optional = true }
 rand = { version = "0.8.0", optional = true }
@@ -33,6 +33,7 @@ backtrace = { version = "0.3.43", optional = true, features = ["serde"] }
 
 [dev-dependencies]
 tokio = { version = "1.8.2", features = ["macros", "rt", "rt-multi-thread", "process"] }
+async-trait = "0.1.58"
 
 [[example]]
 name = "hello"
