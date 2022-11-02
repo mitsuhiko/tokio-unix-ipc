@@ -26,7 +26,7 @@ async fn main() {
     } else {
         let client = IpcSender::new();
         let mut child = process::Command::new(env::current_exe().unwrap())
-            .env(ENV_VAR, client.get_path().await)
+            .env(ENV_VAR, client.get_path())
             .spawn()
             .unwrap();
 
@@ -87,7 +87,7 @@ impl IpcSender {
             bootstrap: Arc::new(bootstrapper)
         }
     }
-    pub async fn get_path(&self) -> String {
+    pub fn get_path(&self) -> String {
         String::from(self.bootstrap.get_path())
     }
 }
