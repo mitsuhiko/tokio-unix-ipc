@@ -16,7 +16,7 @@ use std::panic;
 
 use serde_::{Deserialize, Serialize};
 
-fn serialize_panic(panic: &(dyn Any + Send + 'static)) -> PanicInfo {
+fn serialize_panic(panic: &dyn Any) -> PanicInfo {
     PanicInfo::new(match panic.downcast_ref::<&'static str>() {
         Some(s) => *s,
         None => match panic.downcast_ref::<String>() {
@@ -169,7 +169,7 @@ fn reset_panic_info() {
     });
 }
 
-fn take_panic_info(payload: &(dyn Any + Send + 'static)) -> PanicInfo {
+fn take_panic_info(payload: &dyn Any) -> PanicInfo {
     PANIC_INFO
         .with(|pi| pi.borrow_mut().take())
         .unwrap_or_else(move || serialize_panic(payload))
