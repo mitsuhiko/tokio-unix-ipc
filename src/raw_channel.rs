@@ -15,7 +15,14 @@ use nix::unistd;
 
 use tokio::io::unix::AsyncFd;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
 const MSG_FLAGS: MsgFlags = MsgFlags::MSG_CMSG_CLOEXEC;
 
 #[cfg(target_os = "macos")]
