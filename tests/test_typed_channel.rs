@@ -11,15 +11,29 @@ async fn test_basic() {
 
     let (tx, rx) = symmetric_channel().unwrap();
 
-    tokio::spawn(async move {
+    let local = tokio::task::LocalSet::new();
+    local.spawn_local(async move {
         tx.send(f).await.unwrap();
     });
 
-    let f = rx.recv().await.unwrap();
+    local
+        .run_until(async move {
+            let f = rx.recv().await.unwrap();
 
-    let mut out = Vec::new();
-    f.into_inner().read_to_end(&mut out).unwrap();
-    assert!(out.len() > 100);
+            let mut out = Vec::new();
+            f.into_inner().read_to_end(&mut out).unwrap();
+            assert!(out.len() > 100);
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn test_channel_impl_send() {
+    let (tx, rx) = symmetric_channel().unwrap();
+    // Verify that channels are Send
+    let _ = &tx as &dyn Send;
+    let _ = &rx as &dyn Send;
+    let _ = tx.send(());
 }
 
 #[tokio::test]
@@ -28,14 +42,20 @@ async fn test_basic_asymmetric() {
 
     let (tx, rx) = channel().unwrap();
 
-    tokio::task::spawn_blocking(|| {
+    let local = tokio::task::LocalSet::new();
+
+    local.spawn_local(async move {
         let mut out = Vec::new();
         f.into_inner().read_to_end(&mut out).unwrap();
-        tokio::runtime::Handle::current().block_on(async move { tx.send(out).await.unwrap() })
+        tx.send(out).await.unwrap();
     });
 
-    let out: Vec<u8> = rx.recv().await.unwrap();
-    assert!(out.len() > 100);
+    local
+        .run_until(async move {
+            let out: Vec<u8> = rx.recv().await.unwrap();
+            assert!(out.len() > 100);
+        })
+        .await;
 }
 
 #[tokio::test]
@@ -43,7 +63,9 @@ async fn test_send_channel() {
     let (tx, rx) = symmetric_channel().unwrap();
     let (sender, receiver) = symmetric_channel::<Handle<File>>().unwrap();
 
-    tokio::spawn(async move {
+    let local = tokio::task::LocalSet::new();
+
+    local.spawn_local(async move {
         tx.send(sender).await.unwrap();
         let handle = receiver.recv().await.unwrap();
         let mut file = handle.into_inner();
@@ -52,11 +74,15 @@ async fn test_send_channel() {
         assert!(out.len() > 100);
     });
 
-    let sender = rx.recv().await.unwrap();
-    sender
-        .send(Handle::from(File::open("src/serde.rs").unwrap()))
-        .await
-        .unwrap();
+    local
+        .run_until(async move {
+            let sender = rx.recv().await.unwrap();
+            sender
+                .send(Handle::from(File::open("src/serde.rs").unwrap()))
+                .await
+                .unwrap();
+        })
+        .await;
 }
 
 #[tokio::test]
@@ -65,16 +91,22 @@ async fn test_multiple_fds() {
     let (tx2, rx2) = symmetric_channel::<()>().unwrap();
     let (tx3, rx3) = symmetric_channel::<()>().unwrap();
 
-    let a = tokio::spawn(async move {
+    let local = tokio::task::LocalSet::new();
+
+    let a = local.spawn_local(async move {
         tx1.send((tx2, rx2, tx3, rx3)).await.unwrap();
     });
 
-    let b = tokio::spawn(async move {
+    let b = local.spawn_local(async move {
         let _channels = rx1.recv().await.unwrap();
     });
 
-    a.await.unwrap();
-    b.await.unwrap();
+    local
+        .run_until(async move {
+            a.await.unwrap();
+            b.await.unwrap();
+        })
+        .await;
 }
 
 #[tokio::test]
@@ -84,28 +116,35 @@ async fn test_conversion() {
     let raw_rx = rx.into_raw_receiver();
     let tx = Sender::<bool>::from(raw_tx);
     let rx = Receiver::<bool>::from(raw_rx);
-
-    let a = tokio::spawn(async move {
+    let local = tokio::task::LocalSet::new();
+    let a = local.spawn_local(async move {
         tx.send(true).await.unwrap();
     });
 
-    let b = tokio::spawn(async move {
+    let b = local.spawn_local(async move {
         assert_eq!(rx.recv().await.unwrap(), true);
     });
 
-    a.await.unwrap();
-    b.await.unwrap();
+    local
+        .run_until(async move {
+            a.await.unwrap();
+            b.await.unwrap();
+        })
+        .await;
 }
 
 #[tokio::test]
 async fn test_zero_sized_type() {
     let (tx, rx) = symmetric_channel::<()>().unwrap();
-
-    tokio::spawn(async move {
+    let local = tokio::task::LocalSet::new();
+    local.spawn_local(async move {
         tx.send(()).await.unwrap();
     });
-
-    rx.recv().await.unwrap();
+    local
+        .run_until(async move {
+            rx.recv().await.unwrap();
+        })
+        .await;
 }
 
 const HELO: &str = "HELO from server";
