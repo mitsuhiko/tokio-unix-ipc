@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::os::unix::prelude::RawFd;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use tokio::net::UnixListener;
 
@@ -63,18 +63,14 @@ impl Bootstrapper {
     /// into the inner socket. On the other side a
     /// [`RawReceiver`](crate::RawReceiver) must be used.
     pub async fn send_raw(&self, data: &[u8], fds: &[RawFd]) -> io::Result<usize> {
-        if self.sender.lock().unwrap().is_none() {
+        if self.sender.lock().await.is_none() {
             let (sock, _) = self.listener.accept().await?;
             let sender = RawSender::from_std(sock.into_std()?)?;
-            *self.sender.lock().unwrap() = Some(sender);
+            *self.sender.lock().await = Some(sender);
         }
-        self.sender
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .send(data, fds)
-            .await
+        let guard = self.sender.lock().await;
+
+        guard.as_ref().unwrap().send(data, fds).await
     }
 
     /// Sends a value into the boostrapper.
