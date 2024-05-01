@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::io;
 use std::io::{IoSlice, IoSliceMut};
 use std::mem;
@@ -5,7 +6,6 @@ use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::slice;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use nix::errno::Errno;
 use nix::sys::socket::{
@@ -92,7 +92,7 @@ macro_rules! fd_impl {
             pub(crate) unsafe fn from_raw_fd(fd: RawFd) -> io::Result<Self> {
                 Ok(Self {
                     inner: AsyncFd::new(fd)?,
-                    dead: AtomicBool::new(false),
+                    dead: false.into(),
                 })
             }
 
@@ -109,9 +109,10 @@ macro_rules! fd_impl {
             }
 
             pub(crate) fn extract_raw_fd(&self) -> RawFd {
-                if self.dead.swap(true, Ordering::SeqCst) {
+                if self.dead.get() {
                     panic!("handle was moved previously");
                 } else {
+                    self.dead.replace(true);
                     self.inner.as_raw_fd()
                 }
             }
@@ -138,7 +139,7 @@ macro_rules! fd_impl {
 
         impl Drop for $ty {
             fn drop(&mut self) {
-                if !self.dead.load(Ordering::SeqCst) {
+                if !self.dead.get() {
                     unistd::close(self.as_raw_fd()).ok();
                 }
             }
@@ -310,7 +311,7 @@ pub fn raw_channel_from_std(sender: UnixStream) -> io::Result<(RawSender, RawRec
 #[derive(Debug)]
 pub struct RawReceiver {
     inner: AsyncFd<RawFd>,
-    dead: AtomicBool,
+    dead: Cell<bool>,
 }
 
 impl RawReceiver {
@@ -389,15 +390,12 @@ impl RawReceiver {
     }
 }
 
-unsafe impl Send for RawReceiver {}
-unsafe impl Sync for RawReceiver {}
-
 /// An async raw sender.
 #[derive(Debug)]
 pub struct RawSender {
     inner: AsyncFd<RawFd>,
     #[allow(dead_code)]
-    dead: AtomicBool,
+    dead: Cell<bool>,
 }
 
 impl RawSender {
@@ -440,6 +438,3 @@ impl RawSender {
         }
     }
 }
-
-unsafe impl Send for RawSender {}
-unsafe impl Sync for RawSender {}
