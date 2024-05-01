@@ -90,7 +90,7 @@ async fn test_conversion() {
     });
 
     let b = tokio::spawn(async move {
-        assert_eq!(rx.recv().await.unwrap(), true);
+        assert!(rx.recv().await.unwrap());
     });
 
     a.await.unwrap();

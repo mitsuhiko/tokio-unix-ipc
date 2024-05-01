@@ -31,10 +31,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.53.0
-          profile: minimal
-          override: true
+      - uses: dtolnay/rust-toolchain@stable
       - name: Test
         run: cargo check --all-features

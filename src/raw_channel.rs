@@ -239,8 +239,8 @@ fn recv_impl(
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<usize> {
-    let iov = [IoSlice::new(&data)];
-    let creds = creds.then(|| nix::sys::socket::UnixCredentials::new());
+    let iov = [IoSlice::new(data)];
+    let creds = creds.then(nix::sys::socket::UnixCredentials::new);
     let sent = match (fds, creds.as_ref()) {
         ([], None) => nix_eintr!(sendmsg::<()>(fd, &iov, &[], MsgFlags::empty(), None))?,
         ([], Some(creds)) => nix_eintr!(sendmsg::<()>(
@@ -408,7 +408,7 @@ impl RawSender {
             fd_count: fds.len() as u32,
         };
         self.send_impl(header.as_buf(), &[][..], false).await?;
-        self.send_impl(&data, fds, false).await
+        self.send_impl(data, fds, false).await
     }
 
     /// Sends raw bytes and fds along with current process credentials.
@@ -419,7 +419,7 @@ impl RawSender {
             fd_count: fds.len() as u32,
         };
         self.send_impl(header.as_buf(), &[][..], true).await?;
-        self.send_impl(&data, fds, false).await
+        self.send_impl(data, fds, false).await
     }
 
     async fn send_impl(&self, data: &[u8], mut fds: &[RawFd], creds: bool) -> io::Result<usize> {

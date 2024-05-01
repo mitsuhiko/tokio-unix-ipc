@@ -18,7 +18,7 @@ use serde_::{Deserialize, Serialize};
 
 fn serialize_panic(panic: &dyn Any) -> PanicInfo {
     PanicInfo::new(match panic.downcast_ref::<&'static str>() {
-        Some(s) => *s,
+        Some(s) => s,
         None => match panic.downcast_ref::<String>() {
             Some(s) => &s[..],
             None => "Box<Any>",
@@ -160,7 +160,7 @@ impl fmt::Display for PanicInfo {
 }
 
 thread_local! {
-    static PANIC_INFO: RefCell<Option<PanicInfo>> = RefCell::new(None);
+    static PANIC_INFO: RefCell<Option<PanicInfo>> = const { RefCell::new(None) };
 }
 
 fn reset_panic_info() {
@@ -187,7 +187,7 @@ fn panic_handler(info: &panic::PanicInfo<'_>, capture_backtrace: bool) {
 /// has been installed (see [`init_panic_hook`]).
 pub fn catch_panic<F: FnOnce() -> R, R>(func: F) -> Result<R, PanicInfo> {
     reset_panic_info();
-    match panic::catch_unwind(panic::AssertUnwindSafe(|| func())) {
+    match panic::catch_unwind(panic::AssertUnwindSafe(func)) {
         Ok(rv) => Ok(rv),
         Err(panic) => Err(take_panic_info(&*panic)),
     }

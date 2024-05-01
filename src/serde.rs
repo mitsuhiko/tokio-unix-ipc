@@ -24,7 +24,7 @@ use serde_::{de, ser};
 use serde_::{de::DeserializeOwned, Deserialize, Serialize};
 
 thread_local! {
-    static IPC_FDS: RefCell<Vec<Vec<RawFd>>> = RefCell::new(Vec::new());
+    static IPC_FDS: RefCell<Vec<Vec<RawFd>>> = const {RefCell::new(Vec::new())};
 }
 
 /// Can transfer a unix file handle across processes.
@@ -282,7 +282,7 @@ mod structural {
             let msgpack = Vec::<u8>::deserialize(deserializer)
                 .map_err(|e| de::Error::custom(e.to_string()))?;
             Ok(Structural(
-                rmp_serde::from_read_ref(&msgpack).map_err(|e| de::Error::custom(e.to_string()))?,
+                rmp_serde::from_slice(&msgpack).map_err(|e| de::Error::custom(e.to_string()))?,
             ))
         }
     }
