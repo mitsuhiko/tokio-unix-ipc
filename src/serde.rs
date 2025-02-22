@@ -155,7 +155,7 @@ pub fn is_ipc_mode() -> bool {
 fn bincode_to_io_error(err: bincode::Error) -> io::Error {
     match *err {
         bincode::ErrorKind::Io(err) => err,
-        err => io::Error::new(io::ErrorKind::Other, err.to_string()),
+        err => io::Error::new(io::ErrorKind::InvalidData, err.to_string()),
     }
 }
 
