@@ -33,7 +33,7 @@ impl Bootstrapper {
         let mut dir = std::env::temp_dir();
         let mut rng = thread_rng();
         let now = SystemTime::now();
-        dir.push(&format!(
+        dir.push(format!(
             ".rust-unix-ipc.{}-{}.sock",
             now.duration_since(UNIX_EPOCH).unwrap().as_secs(),
             rng.next_u64(),

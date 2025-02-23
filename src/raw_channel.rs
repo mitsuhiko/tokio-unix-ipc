@@ -270,7 +270,7 @@ fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], creds: bool) -> io::Result<u
 
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 fn send_impl(fd: RawFd, data: &[u8], fds: &[RawFd], _creds: bool) -> io::Result<usize> {
-    let iov = [IoSlice::new(&data)];
+    let iov = [IoSlice::new(data)];
     let sent = if !fds.is_empty() {
         nix_eintr!(sendmsg::<()>(
             fd,
