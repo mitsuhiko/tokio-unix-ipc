@@ -27,6 +27,10 @@
 //! * `bootstrap`: adds support for boostrapping
 //! * `panic-support`: adds support for IPC panic catching
 //! * `backtrace`: adds support for backtraces to panics
+
+// because of PanicInfo
+#![allow(deprecated)]
+
 mod raw_channel;
 
 #[cfg(feature = "serde")]
